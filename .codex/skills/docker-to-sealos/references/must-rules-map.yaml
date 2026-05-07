@@ -12,14 +12,18 @@ must_rules:
     enforcement:
       type: rule
       target: R012
-  - must: "Template `spec.readme` must be `https://raw.githubusercontent.com/labring-actions/templates/kb-0.9/template/<app-name>/README.md`."
+  - must: "Template `spec.readme` must point to `https://raw.githubusercontent.com/labring-actions/templates/kb-0.9/template/<app-name>/README.md`."
     enforcement:
       type: rule
       target: R025
-  - must: "Template `spec.i18n.zh.readme` must be `https://raw.githubusercontent.com/labring-actions/templates/kb-0.9/template/<app-name>/README_zh.md`."
+  - must: "Template `spec.i18n.zh.readme` must point to `https://raw.githubusercontent.com/labring-actions/templates/kb-0.9/template/<app-name>/README_zh.md`."
     enforcement:
       type: rule
       target: R025
+  - must: "These README fields are URL references in `index.yaml` only; this skill must not create or update the referenced README files."
+    enforcement:
+      type: manual
+      note: "review artifact writes and ensure README files are not created or changed by docker-to-sealos conversion"
   - must: "`icon` URL must point to template repo raw path for this app on `kb-0.9` branch."
     enforcement:
       type: rule

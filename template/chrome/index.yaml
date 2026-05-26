@@ -10,6 +10,8 @@ spec:
   description: Google Chrome browser running in a LinuxServer.io Selkies container with a web-based desktop UI.
   readme: https://raw.githubusercontent.com/labring-actions/templates/kb-0.9/template/chrome/README.md
   icon: https://raw.githubusercontent.com/labring-actions/templates/kb-0.9/template/chrome/logo.svg
+  screenshots:
+    - https://raw.githubusercontent.com/labring-actions/templates/kb-0.9/template/chrome/website-screenshot.webp
   templateType: inline
   locale: en
   i18n:

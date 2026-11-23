@@ -10,7 +10,7 @@ DeepSeek Harness runs one web process on port `3080`. The browser UI provides in
 
 The template mounts two persistent volumes: `/data` stores DSH profiles, credentials, settings, and session data, while `/workspace` stores the project files used by the agent. Both volumes survive Pod restarts and template updates.
 
-Authentication uses a launch token printed by the server. Opening the tokenized URL once creates a signed browser cookie that remains valid for 30 days. The launch token is reissued whenever the container starts.
+Access uses two layers. The Ingress requires HTTP Basic Auth with the username and password from the deployment form. After that, DeepSeek Harness requires a launch token printed by the server. Opening the tokenized URL once creates a signed browser cookie that remains valid for 30 days. The launch token is reissued whenever the container starts, while the signed cookie keeps its 30-day lifetime across restarts.
 
 ## Common Use Cases
 
@@ -61,6 +61,7 @@ The 512Mi memory tier passed cold start, token login, model configuration, sessi
 - **Port**: `3080`
 - **Public URL**: `https://<app-host>.<region-domain>/`
 - **Trusted host**: The generated Ingress host
+- **Basic Auth**: The `basic_auth_username` and `basic_auth_password` deployment inputs, stored in the `*-basic-auth` Secret
 - **Telemetry**: Disabled with `DSH_TELEMETRY_DISABLED=1`
 - **Persistence**: `/data` and `/workspace` PVCs
 - **Replicas**: `1`
@@ -83,27 +84,30 @@ Sealos is an AI-assisted cloud operating system built on Kubernetes. It combines
 ## Deployment Guide
 
 1. Open the [DeepSeek Harness template](https://sealos.io/products/app-store/deepseek-harness) and click **Deploy Now**.
-2. Review the generated application name and host, then confirm the deployment.
+2. Review the generated application name, host, and Basic Auth credentials. Save the Basic Auth password before confirming the deployment.
 3. Wait for deployment to complete, typically 2-3 minutes. Sealos redirects you to the Canvas after the resources are created.
 4. Open the application URL shown in the Canvas.
-5. Follow [Login and Registration](#login-and-registration) to authenticate the browser.
+5. Follow [Login and Access](#login-and-access) to authenticate the browser.
 
-## Login and Registration
+## Login and Access
 
-DeepSeek Harness uses launch-token authentication. Each container start prints a fresh login URL to the application log.
+Access uses two credentials. First authenticate at the Ingress with the Basic Auth username and password from the deployment form. Then sign in to DeepSeek Harness with the launch token from the application log.
 
-1. Open the deployment in Sealos Canvas.
-2. Open the DeepSeek Harness StatefulSet or Pod resource card and view its logs.
-3. Find the latest line that starts with `dsh web:`:
+DeepSeek Harness has no self-service registration. Access is granted by the deployment's Basic Auth credentials and the launch token.
+
+1. Open the deployment in Sealos Canvas and open the application URL.
+2. Enter the `basic_auth_username` and `basic_auth_password` values from the deployment form when the browser asks for credentials.
+3. Open the DeepSeek Harness StatefulSet or Pod resource card and view its logs.
+4. Find the latest line that starts with `dsh web:`:
 
    ```text
    dsh web: https://<app-host>.<region-domain>/?token=<launch-token>
    ```
 
-4. Open the complete URL in the browser once. DeepSeek Harness sets a signed session cookie and redirects to the clean application root.
-5. Use the clean application URL for later visits. The cookie remains valid for 30 days.
+5. Open the complete URL in the browser once. DeepSeek Harness sets a signed session cookie and redirects to the clean application root.
+6. Use the clean application URL for later visits. The browser keeps the Basic Auth credentials and the DeepSeek Harness cookie.
 
-The token changes after every Pod or container restart. Return to the logs and open the newest `dsh web:` URL when access expires or the container restarts.
+The launch token changes after every Pod or container restart. Return to the logs and open the newest `dsh web:` URL when the DeepSeek Harness cookie expires or the container restarts. The Basic Auth credentials stay unchanged until you update the deployment inputs.
 
 Treat the tokenized URL as a password. It grants access to the deployment, including stored credentials and workspace files.
 
@@ -148,9 +152,23 @@ Increase CPU or memory from the DeepSeek Harness StatefulSet resource card when 
 
 Keep the StatefulSet at one replica. The application uses a single shared browser session and ReadWriteOnce volumes for `/data` and `/workspace`.
 
+## Security Notes
+
+This deployment is single-tenant. Every authenticated browser has owner access to the agent, including shell execution, stored credentials, and workspace files. Share access only with people you trust.
+
+- The Ingress Basic Auth password is stored in the `*-basic-auth` Secret. Use a unique password and keep it out of tickets and screenshots.
+- The `dsh web:` launch token is a root-equivalent secret. Treat the tokenized URL as a password.
+- Existing 30-day browser cookies survive Pod restarts because the signing key is stored on the `/data` volume. Restarting the Pod rotates the launch token; issued cookies keep their 30-day lifetime.
+- To revoke every browser session, delete the `/data` PVC and redeploy. This clears credentials, settings, and session data on `/data`; project files on `/workspace` remain.
+- For multi-user access or account-level revocation, put an OAuth2 or SSO proxy in front of the Ingress. Basic Auth provides one shared credential.
+
 ## Troubleshooting
 
-### The application returns 401
+### The browser keeps asking for Basic Auth
+
+Enter the `basic_auth_username` and `basic_auth_password` values from the deployment form. If the browser cached old credentials, open a private window or clear the saved credentials for this host.
+
+### DeepSeek Harness returns 401
 
 The browser has no valid session cookie. Open the latest `dsh web:` token URL from the Pod logs. After a Pod restart, fetch the new token.
 

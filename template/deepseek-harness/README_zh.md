@@ -1,4 +1,4 @@
-# 在 Sealos 上部署并托管 DeepSeek Harness
+# 在 Sealos 上部署和托管 DeepSeek Harness
 
 DeepSeek Harness 是开源编码智能体工作台，提供浏览器聊天、工具调用、会话管理和模型配置。本模板在 Sealos Cloud 上以单个有状态副本集（StatefulSet）部署 DeepSeek Harness 0.2.2-rc.5，并挂载持久化存储。
 
@@ -10,7 +10,7 @@ DeepSeek Harness 在端口 `3080` 上运行一个 Web 进程。浏览器界面�
 
 模板挂载两个持久卷：`/data` 保存 DSH Profile、凭据、设置和会话数据，`/workspace` 保存智能体使用的项目文件。Pod 重启或模板更新后，两份数据都会保留。
 
-应用采用启动令牌（Launch Token）认证。首次打开带令牌的 URL 会签发一个有效期为 30 天的浏览器 Cookie，容器每次启动都会生成新的启动令牌。
+应用使用两层认证。Ingress 首先要求输入部署表单中的 HTTP Basic Auth 用户名和密码；通过后，DeepSeek Harness 再要求使用服务端打印的启动令牌（Launch Token）。首次打开带令牌的 URL 会签发一个有效期为 30 天的浏览器 Cookie，容器每次启动都会生成新的启动令牌，已签发的 Cookie 在重启后继续保持 30 天有效期。
 
 ## 常见使用场景
 
@@ -61,6 +61,7 @@ Sealos 模板包含 DeepSeek Harness Web 服务、Service、HTTPS Ingress 和两
 - **端口**：`3080`
 - **公网地址**：`https://<应用主机名>.<区域域名>/`
 - **可信主机**：自动生成的 Ingress 主机名
+- **Basic Auth**：部署输入 `basic_auth_username` 和 `basic_auth_password`，保存在 `*-basic-auth` Secret 中
 - **遥测**：通过 `DSH_TELEMETRY_DISABLED=1` 关闭
 - **持久化**：`/data` 和 `/workspace` 两个 PVC
 - **副本数**：`1`
@@ -83,27 +84,30 @@ Sealos 是构建在 Kubernetes 上的 AI 辅助云操作系统，将部署、运
 ## 部署指南
 
 1. 打开 [DeepSeek Harness 模板](https://sealos.io/products/app-store/deepseek-harness)，点击 **Deploy Now**。
-2. 检查自动生成的应用名称和主机名，然后确认部署。
+2. 检查自动生成的应用名称、主机名和 Basic Auth 凭据。确认部署前请保存 Basic Auth 密码。
 3. 等待部署完成，通常需要 2-3 分钟。资源创建完成后，Sealos 会跳转到 Canvas。
 4. 打开 Canvas 中显示的应用地址。
-5. 按照[登录与注册](#登录与注册)完成浏览器认证。
+5. 按照[登录与访问](#登录与访问)完成浏览器认证。
 
-## 登录与注册
+## 登录与访问
 
-DeepSeek Harness 使用启动令牌认证。每次容器启动都会在应用日志中输出新的登录 URL。
+登录需要两层凭据。先在 Ingress 输入部署表单中的 Basic Auth 用户名和密码，再使用应用日志中的启动令牌登录 DeepSeek Harness。
 
-1. 在 Sealos Canvas 中打开本次部署。
-2. 打开 DeepSeek Harness 有状态副本集或 Pod 的资源卡片，查看日志。
-3. 找到最新一条以 `dsh web:` 开头的日志：
+DeepSeek Harness 不提供自助注册。访问权限由部署时设置的 Basic Auth 凭据和启动令牌授予。
+
+1. 在 Sealos Canvas 中打开本次部署，并打开应用地址。
+2. 浏览器提示输入凭据时，填写部署表单中的 `basic_auth_username` 和 `basic_auth_password`。
+3. 打开 DeepSeek Harness 有状态副本集或 Pod 的资源卡片，查看日志。
+4. 找到最新一条以 `dsh web:` 开头的日志：
 
    ```text
    dsh web: https://<应用主机名>.<区域域名>/?token=<启动令牌>
    ```
 
-4. 在浏览器中完整打开该 URL。DeepSeek Harness 会签发会话 Cookie，并跳转到不带令牌的应用根地址。
-5. 后续访问使用干净的应用根地址即可。Cookie 有效期为 30 天。
+5. 在浏览器中完整打开该 URL。DeepSeek Harness 会签发会话 Cookie，并跳转到不带令牌的应用根地址。
+6. 后续访问使用干净的应用根地址即可。浏览器会保留 Basic Auth 凭据和 DeepSeek Harness Cookie。
 
-Pod 或容器每次重启后，启动令牌都会变化。访问失效时，请回到日志中获取最新的 `dsh web:` URL。
+Pod 或容器每次重启后，启动令牌都会变化。DeepSeek Harness Cookie 过期或容器重启后，请回到日志中获取最新的 `dsh web:` URL。Basic Auth 凭据保持不变，除非你更新部署输入。
 
 启动令牌等同于部署密码，可访问已保存的凭据和工作区文件。请只向可信人员共享。
 
@@ -148,9 +152,23 @@ API Key 保存在持久化数据卷的 `/data/.dsh/.credentials.yaml` 中，Pod 
 
 请将 StatefulSet 保持在一个副本。应用使用共享浏览器会话，`/data` 和 `/workspace` 采用 ReadWriteOnce 持久卷。
 
+## 安全说明
+
+这是一个单租户部署。每个通过认证的浏览器都拥有 owner 权限，可以执行 Shell、访问已保存的凭据和工作区文件。请只向可信人员开放访问。
+
+- Ingress Basic Auth 密码保存在 `*-basic-auth` Secret 中。请使用独立密码，并避免把密码写入工单或截图。
+- `dsh web:` 启动令牌等同于 root 密码。请把带令牌的 URL 当作密码保管。
+- 已签发的 30 天浏览器 Cookie 在 Pod 重启后继续有效，因为签名密钥保存在 `/data` 卷中。重启 Pod 会轮换启动令牌，已签发的 Cookie 仍保持 30 天有效期。
+- 如需撤销全部浏览器会话，请删除 `/data` PVC 后重新部署。该操作会清除 `/data` 中的凭据、设置和会话数据，`/workspace` 中的项目文件会保留。
+- 如需多用户访问或账号级撤销，请在 Ingress 前增加 OAuth2 或 SSO 代理。Basic Auth 提供的是一组共享凭据。
+
 ## 故障排查
 
-### 应用返回 401
+### 浏览器反复要求 Basic Auth
+
+请输入部署表单中的 `basic_auth_username` 和 `basic_auth_password`。如果浏览器缓存了旧凭据，请使用隐私窗口，或清除该主机保存的凭据。
+
+### DeepSeek Harness 返回 401
 
 浏览器缺少有效会话 Cookie。请打开 Pod 日志中最新的 `dsh web:` 令牌 URL。Pod 重启后需要获取新令牌。
 
